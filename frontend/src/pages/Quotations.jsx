@@ -18,7 +18,7 @@ const Quotations = () => {
         let response;
         let Rfqs;
         if (role == "ROLE_VENDOR") {
-          const response = await axios.get(`${API_BASE_URL}/rfqs/open`, {
+          const response = await axios.get(`${API_BASE_URL}/rfqs/published`, {
             headers: { Authorization: `Bearer ${token}` },
           });
           console.log(response);

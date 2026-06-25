@@ -46,6 +46,7 @@ public class SecurityConfig {
     public AuthenticationManager authenticationManager(UserService userService) {
         DaoAuthenticationProvider authenticationProvider = new DaoAuthenticationProvider(userService);
         authenticationProvider.setPasswordEncoder(passwordEncoder());
+        authenticationProvider.setHideUserNotFoundExceptions(false);
         return new ProviderManager(authenticationProvider);
     }
 
@@ -77,11 +78,14 @@ public class SecurityConfig {
                                 .requestMatchers("/api/auth/login").permitAll()
                                 .requestMatchers("/api/auth/users/vendors").hasAnyRole("ADMIN", "OFFICER")
                                 .requestMatchers("/api/rfqs/create").hasAnyRole("ADMIN", "OFFICER")
-                                .requestMatchers("/api/quotations/approvedByOfficer/{rfqId}/{quoteId}").hasRole("OFFICER")
-                                .requestMatchers("/api/rfqs/all").hasAnyRole("OFFICER","ADMIN","APPROVER")
-                                .requestMatchers("/api/rfqs/open").hasAnyRole("VENDOR","OFFICER","ADMIN","APPROVER")
-                                .requestMatchers("/api/quotations/approved").hasAnyRole("OFFICER","ADMIN","APPROVER")
-                                .requestMatchers("/testing/").permitAll()
+                                .requestMatchers("/api/rfqs/all").hasAnyRole("ADMIN", "OFFICER")
+                                .requestMatchers("/api/rfqs/published").hasAnyRole("VENDOR")
+                                .requestMatchers(HttpMethod.PUT,"/api/rfqs/publish/**").hasAnyRole("APPROVER")
+                                .requestMatchers(HttpMethod.PUT,"/api/quotations/approve/**").hasAnyRole("OFFICER")
+                                .requestMatchers(HttpMethod.GET,"/api/quotations/officer/**").hasAnyRole("APPROVER")
+                                .requestMatchers(HttpMethod.PUT,"/api/quotations/action/**").hasAnyRole("APPROVER")
+                                .requestMatchers(HttpMethod.GET,"/api/quotations/po/all").hasAnyRole("APPROVER","OFFICER")
+
 
                                 .anyRequest().authenticated()
 

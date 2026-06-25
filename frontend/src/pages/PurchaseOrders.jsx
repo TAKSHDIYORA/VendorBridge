@@ -1,139 +1,98 @@
 // src/pages/PurchaseOrders.jsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
 const PurchaseOrders = () => {
+  const [pos, setPos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const user = JSON.parse(localStorage.getItem('vendorBridgeUser'));
+
+  useEffect(() => {
+    fetchPOs();
+  }, []);
+
+  const fetchPOs = async () => {
+    try {
+      const endpoint = user.role === 'ROLE_VENDOR' ? '/quotations/po/my-orders' : '/quotations/po/all';
+      const res = await axios.get(`${import.meta.env.VITE_BACKEND_API_URL}${endpoint}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      setPos(res.data);
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
+  };
+
+  const handlePoAction = async (id, action) => {
+    try {
+      await axios.put(`${import.meta.env.VITE_BACKEND_API_URL}/quotations/po/${id}/${action}`, {}, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      fetchPOs(); // Refresh list
+    } catch (err) { alert("Failed to update PO status"); }
+  };
+
+  const getStatusStyle = (status) => {
+    const styles = {
+      ISSUED: "bg-blue-100 text-blue-700",
+      ACCEPTED: "bg-green-100 text-green-700",
+      REJECTED: "bg-red-100 text-red-700",
+      DELIVERED: "bg-purple-100 text-purple-700"
+    };
+    return styles[status] || "bg-gray-100 text-gray-700";
+  };
+
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-12">
-      
-      {/* Top Header & Global Actions */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+    <div className="max-w-7xl mx-auto py-8 px-4">
+      <div className="flex justify-between items-center mb-8">
         <div>
-          <h2 className="text-2xl font-semibold text-[#212529]">Purchase Order & Invoice</h2>
-          <p className="text-gray-500 mt-1">PO-2025-0068 - auto-generated after approval</p>
-        </div>
-        
-        <div className="flex space-x-3">
-          <button className="flex items-center space-x-2 border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 transition-colors shadow-sm">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            <span>Download PDF</span>
-          </button>
-          <button className="flex items-center space-x-2 border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 transition-colors shadow-sm">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-            <span>Print</span>
-          </button>
-          <button className="flex items-center space-x-2 border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-50 transition-colors shadow-sm">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-            <span>Email invoice</span>
-          </button>
+          <h2 className="text-2xl font-bold text-[#212529]">Purchase Orders</h2>
+          <p className="text-gray-500">Track procurement contracts and delivery status.</p>
         </div>
       </div>
 
-      {/* The Document Area */}
-      <div className="bg-white border border-gray-200 shadow-sm rounded-sm p-10 mt-4 max-w-4xl mx-auto">
-        
-        {/* Addresses Section */}
-        <div className="grid grid-cols-2 gap-12 border-b border-gray-200 pb-8">
-          <div>
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Bill to:</h3>
-            <p className="font-semibold text-[#212529]">Your Organization Name</p>
-            <p className="text-sm text-gray-600 mt-1">123 business park, ahmedabad</p>
-            <p className="text-sm text-gray-600">GSTIN: 25383438AFB</p>
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Vendor</h3>
-            <p className="font-semibold text-[#212529]">Infra supplies pvt ltd</p>
-            <p className="text-sm text-gray-600 mt-1">456, industrial estate, surat</p>
-            <p className="text-sm text-gray-600">GSTIN: 343434DB4523</p>
-          </div>
-        </div>
-
-        {/* Meta Details Section */}
-        <div className="grid grid-cols-2 gap-12 py-6 border-b border-gray-200">
-          <div className="space-y-2">
-            <div className="flex text-sm">
-              <span className="w-32 text-gray-500 font-medium">PO Number:</span>
-              <span className="font-semibold text-[#212529]">PO-2025-0068</span>
-            </div>
-            <div className="flex text-sm">
-              <span className="w-32 text-gray-500 font-medium">PO date:</span>
-              <span className="text-[#212529]">21 May, 2025</span>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div className="flex text-sm">
-              <span className="w-32 text-gray-500 font-medium">Invoice date:</span>
-              <span className="text-[#212529]">22 May 2025</span>
-            </div>
-            <div className="flex text-sm">
-              <span className="w-32 text-gray-500 font-medium">Due date:</span>
-              <span className="text-[#212529] font-medium">21 June 2025</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Line Items Table */}
-        <div className="pt-8">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50 text-xs text-gray-500 uppercase border-y border-gray-200">
-                <th className="py-3 px-4 font-medium">Item</th>
-                <th className="py-3 px-4 font-medium text-center">Qty</th>
-                <th className="py-3 px-4 font-medium text-right">Unit price</th>
-                <th className="py-3 px-4 font-medium text-right">Total</th>
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200 uppercase text-gray-500 text-xs">
+            <tr>
+              <th className="py-4 px-6">PO Number</th>
+              <th className="py-4 px-6">Vendor/Client</th>
+              <th className="py-4 px-6">Total Amount</th>
+              <th className="py-4 px-6">Delivery Date</th>
+              <th className="py-4 px-6">Status</th>
+              <th className="py-4 px-6 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {pos.map((po) => (
+              <tr key={po.id} className="hover:bg-gray-50 transition-colors">
+                <td className="py-4 px-6 font-semibold text-[#017E84]">{po.poNumber}</td>
+                <td className="py-4 px-6">{user.role === 'ROLE_VENDOR' ? 'You' : po.vendor?.companyName}</td>
+                <td className="py-4 px-6">₹{po.totalAmount?.toLocaleString('en-IN')}</td>
+                <td className="py-4 px-6">{new Date(po.expectedDeliveryDate).toLocaleDateString()}</td>
+                <td className="py-4 px-6">
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${getStatusStyle(po.status)}`}>
+                    {po.status}
+                  </span>
+                </td>
+                <td className="py-4 px-6 text-right space-x-2">
+                  {/* Vendor Actions */}
+                  {user.role === 'ROLE_VENDOR' && po.status === 'ISSUED' && (
+                    <>
+                      <button onClick={() => handlePoAction(po.id, 'accept')} className="text-green-600 font-bold hover:underline">Accept</button>
+                      <button onClick={() => handlePoAction(po.id, 'reject')} className="text-red-600 font-bold hover:underline">Reject</button>
+                    </>
+                  )}
+                  {/* Officer Actions */}
+                  {user.role !== 'ROLE_VENDOR' && po.status === 'ACCEPTED' && (
+                    <button onClick={() => handlePoAction(po.id, 'mark-delivered')} className="text-purple-600 font-bold hover:underline">Mark Delivered</button>
+                  )}
+                  <button className="text-gray-500 hover:text-gray-800">View</button>
+                </td>
               </tr>
-            </thead>
-            <tbody className="text-sm text-[#212529] divide-y divide-gray-100">
-              <tr>
-                <td className="py-4 px-4">Ergonomic chair</td>
-                <td className="py-4 px-4 text-center">25</td>
-                <td className="py-4 px-4 text-right">3,500</td>
-                <td className="py-4 px-4 text-right">87,500</td>
-              </tr>
-              <tr>
-                <td className="py-4 px-4">Tech Core LTD <span className="text-xs text-gray-400 block">(Standing Desk)</span></td>
-                <td className="py-4 px-4 text-center">10</td>
-                <td className="py-4 px-4 text-right">8,200</td>
-                <td className="py-4 px-4 text-right">82,000</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Totals Section */}
-        <div className="flex justify-end pt-6">
-          <div className="w-full max-w-sm space-y-3">
-            <div className="flex justify-between text-sm text-gray-600 px-4">
-              <span>Subtotal</span>
-              <span>1,69,500</span>
-            </div>
-            <div className="flex justify-between text-sm text-gray-600 px-4">
-              <span>CGST (9%)</span>
-              <span>15,255</span>
-            </div>
-            <div className="flex justify-between text-sm text-gray-600 px-4">
-              <span>SGST (9%)</span>
-              <span>15,255</span>
-            </div>
-            <div className="flex justify-between items-center border-t border-gray-200 pt-3 px-4 mt-2">
-              <span className="font-bold text-[#212529]">Grand total</span>
-              <span className="text-lg font-bold text-[#017E84]">₹ 2,00,010</span>
-            </div>
-          </div>
-        </div>
-
+            ))}
+          </tbody>
+        </table>
       </div>
-
-      {/* Payment Status Action */}
-      <div className="flex items-center space-x-4 max-w-4xl mx-auto px-2">
-        <span className="text-sm font-medium text-gray-600">Status:</span>
-        <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold uppercase tracking-wider">
-          Pending Payment
-        </span>
-        <button className="text-sm font-semibold text-[#017E84] hover:text-[#01686d] hover:underline transition-colors ml-4">
-          Mark as Paid
-        </button>
-      </div>
-
     </div>
   );
 };

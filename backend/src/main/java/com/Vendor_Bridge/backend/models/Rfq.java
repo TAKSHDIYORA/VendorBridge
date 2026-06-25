@@ -49,13 +49,13 @@ public class Rfq {
             joinColumns = @JoinColumn(name = "rfq_id"),
             inverseJoinColumns = @JoinColumn(name = "vendor_id")
     )
-    private Set<User> assignedVendors = new HashSet<>();
+    private Set<Vendor> assignedVendors = new HashSet<>();
 
     // Don't forget to add Getters and Setters for these two new fields!
     public List<RfqLineItem> getLineItems() { return lineItems; }
     public void setLineItems(List<RfqLineItem> lineItems) { this.lineItems = lineItems; }
-    public Set<User> getAssignedVendors() { return assignedVendors; }
-    public void setAssignedVendors(Set<User> assignedVendors) { this.assignedVendors = assignedVendors; }
+    public Set<Vendor> getAssignedVendors() { return assignedVendors; }
+    public void setAssignedVendors(Set<Vendor> assignedVendors) { this.assignedVendors = assignedVendors; }
 
     // Standard Getters and Setters
     public Long getId() { return id; }

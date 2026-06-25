@@ -9,13 +9,13 @@ const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState('');
 
-  // Form State
+  // --- UPDATED: Form State now matches registerRequest DTO ---
   const [formData, setFormData] = useState({
     email: '', 
     password: '', 
-    firstName: '', 
-    lastName: '', 
-    phone: ''
+    companyName: '', 
+    gstNumber: '', 
+    vendorCategory: ''
   });
 
   const handleChange = (e) => {
@@ -33,7 +33,6 @@ const Login = () => {
         navigate('/dashboard'); 
       } else {
         // --- EXECUTE REGISTER (Forced as VENDOR) ---
-        // We package the form data and force the role to match your backend Enum
         const registerPayload = {
             ...formData,
             role: 'VENDOR' 
@@ -44,7 +43,9 @@ const Login = () => {
         setIsLogin(true); // Flip back to login view
       }
     } catch (err) {
-      setError(err.response?.data || 'Authentication failed. Please try again.');
+      // console.log(err.response);
+      
+      setError(err.message || 'Authentication failed. Please try again.');
     }
   };
 
@@ -87,12 +88,36 @@ const Login = () => {
               <div className="bg-blue-50 text-blue-800 p-3 rounded text-xs mb-4">
                 Note: This portal is for external vendor registration only. Internal staff accounts are provisioned by the Administrator.
               </div>
+              
+              {/* UPDATED: Inputs matching backend DTO */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <input type="text" name="firstName" placeholder="First Name" onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]" />
-                <input type="text" name="lastName" placeholder="Last Name" onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]" />
-                <input type="email" name="email" placeholder="Company Email Address" onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]" />
-                <input type="tel" name="phone" placeholder="Phone Number" onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]" />
-                <input type="password" name="password" placeholder="Password" onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67] md:col-span-2" />
+                <input 
+                  type="text" name="companyName" placeholder="Company Name" 
+                  onChange={handleChange} required 
+                  className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67] md:col-span-2" 
+                />
+                <input 
+                  type="email" name="email" placeholder="Company Email Address" 
+                  onChange={handleChange} required 
+                  className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]" 
+                />
+                <input 
+                  type="password" name="password" placeholder="Password" 
+                  onChange={handleChange} required 
+                  className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]" 
+                />
+                <input 
+                  type="text" name="gstNumber" placeholder="GST Number" 
+                  onChange={handleChange} required 
+                  className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]" 
+                  minLength={15}
+                  maxLength={15}
+                />
+                <input 
+                  type="text" name="vendorCategory" placeholder="Vendor Category (e.g., IT, Logistics)" 
+                  onChange={handleChange} required 
+                  className="w-full px-4 py-2 border border-gray-300 rounded text-sm focus:border-[#714B67] focus:outline-none focus:ring-1 focus:ring-[#714B67]" 
+                />
               </div>
             </div>
           )}

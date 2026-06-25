@@ -19,7 +19,7 @@ public class Quotation {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "vendor_id", nullable = false)
-    private User vendor;
+    private Vendor vendor;
 
     @Column(nullable = false)
     private Double totalAmount;
@@ -40,8 +40,8 @@ public class Quotation {
     public void setId(Long id) { this.id = id; }
     public Rfq getRfq() { return rfq; }
     public void setRfq(Rfq rfq) { this.rfq = rfq; }
-    public User getVendor() { return vendor; }
-    public void setVendor(User vendor) { this.vendor = vendor; }
+    public Vendor getVendor() { return vendor; }
+    public void setVendor(Vendor vendor) { this.vendor = vendor; }
     public Double getTotalAmount() { return totalAmount; }
     public void setTotalAmount(Double totalAmount) { this.totalAmount = totalAmount; }
     public QuotationStatus getStatus() { return status; }

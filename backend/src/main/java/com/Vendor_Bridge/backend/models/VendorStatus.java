@@ -1,4 +1,7 @@
 package com.Vendor_Bridge.backend.models;
 
-public class VendorStatus {
+public enum VendorStatus {
+    ACTIVE,
+    INACTIVE,
+    SUSPENDED
 }

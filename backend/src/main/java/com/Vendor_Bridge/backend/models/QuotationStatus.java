@@ -1,8 +1,11 @@
 package com.Vendor_Bridge.backend.models;
 
 public enum QuotationStatus {
-    SUBMITTED,            // Initial state when vendor submits
-    PENDING_APPROVAL,     // Officer selected it, waiting for Manager
-    APPROVED,             // Manager approved it (Ready for PO/Invoice)
-    REJECTED              // Automatically set for the losing bids (or if Manager rejects)
+    SUBMITTED,//after submit by vendor
+    APPROVED_BY_OFFICER,//after approved by officer
+    IN_QUEUE,//officer choose one other one is this
+    APPROVED,//after approved by manager
+    AWARDED,// after accepting the purchase order
+    COMPLETED,//after completing the procurement with this quotation
+    REJECTED//any issue officer or approver can reject the quotation
 }

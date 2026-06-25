@@ -76,7 +76,13 @@ const Layout = () => {
       name: "Activity", 
       path: "/activity", 
       allowedRoles: ["ROLE_OFFICER", "ROLE_ADMIN"] 
+    },
+    {
+      name: "MyQuotation",
+      path : "/myquotation",
+      allowedRoles: ["ROLE_VENDOR"]
     }
+
   ];
 
   // --- FILTER MENU ITEMS ---
@@ -158,25 +164,32 @@ const Layout = () => {
           </div>
 
           {/* Right Side: Profile Info */}
-          <div className="flex items-center space-x-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold text-gray-800 capitalize">
-                {user?.email ? user.email.split('@')[0] : "User"}
-              </p>
-              <p className="text-xs text-gray-500 font-medium tracking-wide">
-                {userRole ? userRole.replace('ROLE_', '').replace('_', ' ') : ""}
-              </p>
-            </div>
-            <div className="w-9 h-9 rounded-full bg-[#017E84] flex items-center justify-center text-white font-bold shadow-sm uppercase">
-              {user?.email ? user.email.charAt(0) : "U"}
-            </div>
-            <button
-              onClick={logout}
-              className="text-xs text-red-500 hover:text-red-700 font-medium border border-red-100 bg-red-50 px-3 py-1.5 rounded hover:bg-red-100 transition-colors"
-            >
-              Logout
-            </button>
-          </div>
+         <div className="flex items-center space-x-4">
+  <div className="text-right hidden sm:block">
+    <p className="text-sm font-semibold text-gray-800 capitalize">
+      {user?.email ? user.email.split('@')[0] : "User"}
+    </p>
+    <p className="text-xs text-gray-500 font-medium tracking-wide">
+      {userRole ? userRole.replace('ROLE_', '').replace('_', ' ') : ""}
+    </p>
+  </div>
+  
+  {/* UPDATED: Avatar is now a clickable Link to /profile */}
+  <Link 
+    to="/profile" 
+    title="View Profile"
+    className="w-9 h-9 rounded-full bg-[#017E84] flex items-center justify-center text-white font-bold shadow-sm uppercase cursor-pointer hover:ring-2 hover:ring-[#017E84] hover:ring-offset-2 transition-all"
+  >
+    {user?.email ? user.email.charAt(0) : "U"}
+  </Link>
+
+  <button
+    onClick={logout}
+    className="text-xs text-red-500 hover:text-red-700 font-medium border border-red-100 bg-red-50 px-3 py-1.5 rounded hover:bg-red-100 transition-colors"
+  >
+    Logout
+  </button>
+</div>
         </header>
 
         {/* Page Content */}

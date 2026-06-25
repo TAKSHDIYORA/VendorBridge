@@ -41,9 +41,15 @@ export const AuthProvider = ({ children }) => {
     return userData;
 
   } catch (error) {
-    // Extract the exact error message thrown by Spring Security (e.g., "Invalid email or password")
-    const errorMessage = error.response?.data || 'Server error occurred during login.';
-    throw new Error(errorMessage);
+    // Check if the backend sent our custom message (e.g., "Wrong password")
+    console.log(error.response);
+      
+    if (error.response && error.response.data) {
+        throw new Error(error.response.data);
+    } else {
+        // Fallback if the server is completely unreachable
+        throw new Error("Unable to connect to the server. Please try again.");
+    }
   }
 };
 

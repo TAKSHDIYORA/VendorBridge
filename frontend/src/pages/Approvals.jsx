@@ -1,236 +1,352 @@
 // src/pages/Approvals.jsx
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios'; 
 
 const Approvals = () => {
-  // 1. State Management
-  const [pendingApprovals, setPendingApprovals] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  // 1. Unified State Management
+  const [queueItems, setQueueItems] = useState([]);
+  const [selectedQueueId, setSelectedQueueId] = useState(null); 
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [remarks, setRemarks] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL;
-  // 2. Fetch the Queue on Mount
+
+  // PO Configuration State (Maps directly to your PurchaseOrder entity)
+  const [remarks, setRemarks] = useState('');
+  const [shippingAddress, setShippingAddress] = useState('DDU Campus, Nadiad, Gujarat, India');
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
+  
+  const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8080/api';
+
+  const getHeaders = () => {
+    const token = JSON.parse(localStorage.getItem('vendorBridgeUser'))?.token;
+    return { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+  };
+
+  // 2. Fetch Queues on Mount
   useEffect(() => {
-    const fetchPendingQueue = async () => {
+    const fetchPendingQueues = async () => {
       try {
-        // Fetch all quotations where status is PENDING_APPROVAL
-        // Replace with your actual Spring Boot endpoint
-        const token = JSON.parse(localStorage.getItem('vendorBridgeUser'))?.token;
-        const response = await axios.get(`${API_BASE_URL}/quotations/approved`,{
-          headers: { 'Authorization': `Bearer ${token}` }
-        }); 
+        setLoading(true);
+        const [rfqResponse, quoteResponse] = await Promise.all([
+          axios.get(`${API_BASE_URL}/rfqs/drafted`, { headers: getHeaders() }).catch(() => ({ data: [] })),
+          axios.get(`${API_BASE_URL}/quotations/officer`, { headers: getHeaders() }).catch(() => ({ data: [] }))
+        ]); 
         
-        // Assuming response.data.data is an array of quotation objects
-        setPendingApprovals(response.data);
+        const pendingRfqs = (rfqResponse.data || [])
+          .filter(r => r.status === 'DRAFT' || r.status === 'PENDING_APPROVAL')
+          .map(r => ({ ...r, queueType: 'RFQ', queueId: `RFQ-${r.id}` }));
+
+        const pendingQuotes = (quoteResponse.data || [])
+          .map(q => ({ ...q, queueType: 'QUOTATION', queueId: `QTN-${q.id}` }));
+
+        const combinedQueue = [...pendingRfqs, ...pendingQuotes];
+        setQueueItems(combinedQueue);
         
-        // Auto-select the first item if the list isn't empty
-        if (response.data.length > 0) {
-            setSelectedId(response.data[0].id);
+        if (combinedQueue.length > 0) {
+          setSelectedQueueId(combinedQueue[0].queueId);
         }
       } catch (err) {
-        setError("Failed to load the approval queue. Please try again.");
+        setError("Failed to load the approval queues. Please try again.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchPendingQueue();
-  }, []);
+    fetchPendingQueues();
+  }, [API_BASE_URL]);
 
-  // Derived state: find the full object for the selected item
-  const selectedQuotation = pendingApprovals.find(q => q.id === selectedId);
+  const selectedItem = useMemo(() => {
+    return queueItems.find(item => item.queueId === selectedQueueId);
+  }, [queueItems, selectedQueueId]);
 
-  // 3. Action Handlers (Approve / Reject)
+  // Handle Form Resets when changing selected items
+  useEffect(() => {
+    if (selectedItem?.queueType === 'QUOTATION') {
+      // Set a default delivery date 14 days from today
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 14);
+      setExpectedDeliveryDate(futureDate.toISOString().split('T')[0]);
+      setShippingAddress('DDU Campus, Nadiad, Gujarat, India');
+    }
+    setRemarks('');
+  }, [selectedItem]);
+
+  // 3. Action Handlers
   const handleAction = async (decision) => {
-    if (!selectedId) return;
+    if (!selectedItem) return;
     
+    if (selectedItem.queueType === 'QUOTATION' && decision === 'APPROVE') {
+        if (!expectedDeliveryDate || !shippingAddress) {
+            alert("Please provide a Shipping Address and Expected Delivery Date for the Purchase Order.");
+            return;
+        }
+        const confirmPO = window.confirm("WARNING: Approving this quotation will instantly generate a legally binding Purchase Order and email it to the vendor. Proceed?");
+        if (!confirmPO) return;
+    }
+
     setActionLoading(true);
     try {
-      // Replace with your actual backend endpoint
-      await axios.post(`/api/v1/quotations/${selectedId}/action`, {
-        action: decision, // 'APPROVE' or 'REJECT'
-        remarks: remarks
-      });
+      let endpoint = '';
+      let payload = {};
+
+      if (selectedItem.queueType === 'RFQ') {
+          endpoint = decision === 'APPROVE' 
+            ? `${API_BASE_URL}/rfqs/publish/${selectedItem.id}` 
+            : `${API_BASE_URL}/rfqs/reject/${selectedItem.id}`;
+          payload = { remarks };
+      } else {
+          endpoint = `${API_BASE_URL}/quotations/action/${selectedItem.id}`;
+          payload = { 
+            action: decision, 
+            remarks: remarks,
+            // Maps to your PurchaseOrder entity fields
+            shippingAddress: shippingAddress,
+            expectedDeliveryDate: expectedDeliveryDate ? `${expectedDeliveryDate}T23:59:59` : null
+          };
+      }
+
+      await axios.put(endpoint, payload, { headers: getHeaders() });
       
-      alert(`Quotation ${decision}D successfully!`);
+      const actionText = decision === 'APPROVE' 
+        ? (selectedItem.queueType === 'RFQ' ? 'RFQ Published' : 'Purchase Order Generated') 
+        : 'Request Rejected';
+        
+      alert(`${actionText}!`);
       
-      // Remove the processed item from the queue
-      const updatedQueue = pendingApprovals.filter(q => q.id !== selectedId);
-      setPendingApprovals(updatedQueue);
-      
-      // Clear remarks and auto-select the next item
-      setRemarks('');
-      setSelectedId(updatedQueue.length > 0 ? updatedQueue[0].id : null);
+      const updatedQueue = queueItems.filter(item => item.queueId !== selectedQueueId);
+      setQueueItems(updatedQueue);
+      setSelectedQueueId(updatedQueue.length > 0 ? updatedQueue[0].queueId : null);
 
     } catch (err) {
-      alert("An error occurred while processing the approval.");
+      alert(err.response?.data?.message || err.response?.data || "An error occurred.");
     } finally {
       setActionLoading(false);
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Loading your approval queue...</div>;
+  if (loading) return <div className="p-8 text-center text-gray-500">Loading your action queue...</div>;
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
       
-      {/* Header */}
       <div>
-        <h2 className="text-2xl font-semibold text-[#212529]">Manager Approvals</h2>
-        <p className="text-gray-500 mt-1">Review and process quotations forwarded by Procurement Officers.</p>
+        <h2 className="text-2xl font-semibold text-[#212529]">Approver Dashboard</h2>
+        <p className="text-gray-500 mt-1">Review RFQ publishing requests and configure final Purchase Orders.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-8 h-[calc(100vh-200px)] min-h-[600px]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-8 h-[calc(100vh-180px)] min-h-[600px]">
         
-        {/* LEFT COLUMN: The Queue (1/3 width) */}
+        {/* LEFT COLUMN: Queue */}
         <div className="lg:col-span-4 bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-gray-200 bg-gray-50">
-                <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Pending Queue ({pendingApprovals.length})</h3>
-            </div>
-            
-            <div className="overflow-y-auto flex-1 p-2 space-y-2">
-                {pendingApprovals.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500 text-sm">No pending approvals in your queue.</div>
-                ) : (
-                    pendingApprovals.map((item) => (
-                        <div 
-                            key={item.id}
-                            onClick={() => {
-                                setSelectedId(item.id);
-                                setRemarks(''); // Reset remarks when switching
-                            }}
-                            className={`p-4 rounded border cursor-pointer transition-all ${selectedId === item.id ? 'border-[#017E84] bg-[#017E84]/5 shadow-sm' : 'border-gray-100 hover:border-gray-300 hover:bg-gray-50'}`}
-                        >
-                            <div className="flex justify-between items-start mb-1">
-                                <span className="text-xs font-bold text-[#017E84]">{item.rfqNumber || 'RFQ-XXX'}</span>
-                                <span className="text-xs text-gray-500">{item.submittedDate || 'Recent'}</span>
-                            </div>
-                            <h4 className="font-semibold text-sm text-[#212529] truncate">{item.rfqTitle}</h4>
-                            <p className="text-xs text-gray-500 mt-1 truncate">{item.vendorName}</p>
-                            <div className="mt-3 text-sm font-bold text-gray-800">
-                                ₹ {item.totalAmount?.toLocaleString()}
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
+          <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+            <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Action Queue</h3>
+            <span className="bg-[#017E84] text-white text-xs font-bold px-2 py-1 rounded-full">{queueItems.length}</span>
+          </div>
+          
+          <div className="overflow-y-auto flex-1 p-2 space-y-2">
+            {queueItems.length === 0 ? (
+              <div className="p-8 text-center text-gray-500 text-sm">Your queue is clear.</div>
+            ) : (
+              queueItems.map((item) => {
+                const isRfq = item.queueType === 'RFQ';
+                return (
+                  <div 
+                    key={item.queueId}
+                    onClick={() => setSelectedQueueId(item.queueId)}
+                    className={`p-4 rounded border cursor-pointer transition-all ${selectedQueueId === item.queueId ? 'border-[#017E84] bg-[#017E84]/5 shadow-sm' : 'border-gray-100 hover:border-gray-300 hover:bg-gray-50'}`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-xs font-bold text-[#017E84]">{item.queueId}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${isRfq ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                        {isRfq ? 'Publish RFQ' : 'Generate PO'}
+                      </span>
+                    </div>
+                    <h4 className="font-semibold text-sm text-[#212529] truncate">
+                      {isRfq ? item.title : item.rfq?.title}
+                    </h4>
+                    {isRfq ? (
+                      <p className="text-xs text-gray-500 mt-1 truncate">Officer: {item.createdBy?.email}</p>
+                    ) : (
+                      <div className="flex justify-between items-center mt-1">
+                        <p className="text-xs text-gray-500 truncate">Vendor: {item.vendor?.companyName || item.vendor?.email.split('@')[0]}</p>
+                        <p className="text-xs font-bold text-[#017E84]">₹{item.totalAmount?.toLocaleString('en-IN')}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        {/* RIGHT COLUMN: The Action Panel (2/3 width) */}
-        <div className="lg:col-span-8 bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col overflow-y-auto p-8">
-            
-            {!selectedQuotation ? (
-                <div className="flex-1 flex items-center justify-center text-gray-400">
-                    Select a quotation from the queue to review details.
+        {/* RIGHT COLUMN: Details & PO Configuration */}
+        <div className="lg:col-span-8 bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col overflow-y-auto p-6 md:p-8 relative">
+          
+          {!selectedItem ? (
+            <div className="flex-1 flex items-center justify-center text-gray-400">Select an item to review.</div>
+          ) : (
+            <div className="space-y-6 flex-1 flex flex-col">
+              
+              {/* Header */}
+              <div className="border-b border-gray-200 pb-4">
+                <div className="flex items-center space-x-3 mb-3">
+                   <span className={`text-xs font-bold px-2 py-1 rounded uppercase tracking-wider ${selectedItem.queueType === 'RFQ' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                     {selectedItem.queueType === 'RFQ' ? 'Internal Approval: Publish RFQ to Vendors' : 'Final Authorization: Configure Purchase Order'}
+                   </span>
                 </div>
-            ) : (
-                <div className="space-y-8 flex-1 flex flex-col">
-                    
-                    {/* Detail Header */}
-                    <div className="border-b border-gray-200 pb-4">
-                        <h2 className="text-xl font-bold text-[#212529]">{selectedQuotation.rfqTitle}</h2>
-                        <div className="flex items-center space-x-4 mt-2 text-sm">
-                            <span className="text-gray-500">Vendor: <span className="font-semibold text-gray-800">{selectedQuotation.vendorName}</span></span>
-                            <span className="text-gray-300">|</span>
-                            <span className="text-gray-500">Amount: <span className="font-bold text-[#017E84]">₹ {selectedQuotation.totalAmount?.toLocaleString()}</span></span>
-                        </div>
-                    </div>
+                <h2 className="text-2xl font-bold text-[#212529]">
+                  {selectedItem.queueType === 'RFQ' ? selectedItem.title : selectedItem.rfq?.title}
+                </h2>
+                
+                <div className="flex items-center space-x-4 mt-4 text-sm bg-gray-50 p-3 rounded border border-gray-100">
+                  {selectedItem.queueType === 'RFQ' ? (
+                    <>
+                      <span className="text-gray-600">Created By: <span className="font-semibold text-gray-800">{selectedItem.createdBy?.email}</span></span>
+                      <span className="text-gray-300">|</span>
+                      <span className="text-gray-600">Deadline: <span className="font-bold text-[#017E84]">{new Date(selectedItem.deadline).toLocaleDateString()}</span></span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-gray-600">Selected Vendor: <span className="font-semibold text-gray-800">{selectedItem.vendor?.companyName || selectedItem.vendor?.email}</span></span>
+                      <span className="text-gray-300">|</span>
+                      <span className="text-gray-600">Total Contract Value: <span className="font-bold text-lg text-[#017E84]">₹{selectedItem.totalAmount?.toLocaleString('en-IN')}</span></span>
+                    </>
+                  )}
+                </div>
+              </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1">
-                        
-                        {/* Approval Chain Timeline */}
+              {/* Dynamic Content Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1">
+                
+                {/* Left: Items Display */}
+                <div>
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">
+                    {selectedItem.queueType === 'RFQ' ? 'Requested Line Items' : 'Purchase Order Line Items'}
+                  </h3>
+                  <div className="space-y-3 bg-white border border-gray-200 rounded-lg p-5 shadow-sm max-h-[300px] overflow-y-auto">
+                    {selectedItem.queueType === 'RFQ' ? (
+                      selectedItem.lineItems?.map((line) => (
+                        <div key={line.id || Math.random()} className="flex justify-between items-center text-sm border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                          <span className="font-medium text-gray-700">{line.item}</span>
+                          <span className="text-[#017E84] font-bold bg-[#017E84]/10 px-2 py-1 rounded">{line.quantity} {line.unit}</span>
+                        </div>
+                      ))
+                    ) : (
+                      selectedItem.items?.map((quoteItem) => (
+                        <div key={quoteItem.id} className="flex justify-between items-center text-sm border-b border-gray-100 pb-3 mb-3 last:border-0 last:pb-0 last:mb-0">
+                          <div>
+                            <span className="font-medium text-gray-800 block">{quoteItem.rfqLineItem?.item}</span>
+                            <span className="text-xs text-gray-500">{quoteItem.rfqLineItem?.quantity} {quoteItem.rfqLineItem?.unit} @ ₹{quoteItem.unitPrice?.toLocaleString('en-IN')}/unit</span>
+                          </div>
+                          <span className="font-bold text-gray-900">₹{quoteItem.totalPrice?.toLocaleString('en-IN')}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: Forms and Configurations */}
+                <div className="flex flex-col space-y-4">
+                  {selectedItem.queueType === 'RFQ' ? (
+                    <>
+                      <div>
+                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Targeted Vendors ({selectedItem.assignedVendors?.length || 0})</h3>
+                        <div className="space-y-2 bg-[#F9F9F9] border border-gray-200 rounded-lg p-4 max-h-32 overflow-y-auto">
+                           {selectedItem.assignedVendors && selectedItem.assignedVendors.length > 0 ? (
+                             selectedItem.assignedVendors.map(v => (
+                               <div key={v.id} className="text-xs font-medium text-gray-600 bg-white p-2 border border-gray-100 rounded">{v.companyName || v.email}</div>
+                             ))
+                           ) : (
+                             <span className="text-xs text-gray-500">Open to all registered vendors.</span>
+                           )}
+                        </div>
+                      </div>
+                      <div className="mt-auto">
+                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Approver Remarks</h3>
+                        <textarea 
+                          rows="4" 
+                          placeholder="Add internal notes before publishing..."
+                          value={remarks}
+                          onChange={(e) => setRemarks(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded focus:outline-none focus:border-[#017E84] focus:ring-1 focus:ring-[#017E84] text-sm bg-white"
+                        ></textarea>
+                      </div>
+                    </>
+                  ) : (
+                    // PO Configuration Form
+                    <div className="bg-purple-50 p-5 rounded-lg border border-purple-100 h-full flex flex-col">
+                      <h3 className="text-sm font-bold text-purple-900 border-b border-purple-200 pb-2 mb-4">Configure Purchase Order</h3>
+                      
+                      <div className="space-y-4 flex-1">
                         <div>
-                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-6">Approval Chain</h3>
-                            <div className="space-y-6">
-                            
-                            {selectedQuotation.history && selectedQuotation.history.map((event, index) => (
-                                <div key={index} className="flex items-start space-x-4 relative">
-                                    {index !== selectedQuotation.history.length - 1 && (
-                                    <div className="absolute top-8 left-3.5 w-0.5 h-10 bg-gray-200"></div>
-                                    )}
-                                    <div className="flex-shrink-0 z-10 bg-white">
-                                        {event.status === 'APPROVED' ? (
-                                            <svg className="w-7 h-7 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        ) : event.status === 'PENDING' ? (
-                                            <svg className="w-7 h-7 text-[#017E84]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        ) : (
-                                            <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        )}
-                                    </div>
-                                    <div>
-                                    <p className="text-sm font-semibold text-[#212529]">
-                                        {event.userName} <span className="text-gray-500 font-normal">({event.role})</span>
-                                    </p>
-                                    {event.status === 'PENDING' && (
-                                        <span className="inline-block px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-bold uppercase mt-1 mb-1">
-                                        Awaiting Your Action
-                                        </span>
-                                    )}
-                                    <p className="text-xs text-gray-500 mt-1">{event.actionDate}</p>
-                                    </div>
-                                </div>
-                            ))}
-                            </div>
+                          <label className="block text-xs font-bold text-purple-800 uppercase tracking-wider mb-1">Expected Delivery Date *</label>
+                          <input 
+                            type="date" 
+                            required
+                            value={expectedDeliveryDate}
+                            onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-purple-200 rounded focus:outline-none focus:border-purple-500 text-sm"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-xs font-bold text-purple-800 uppercase tracking-wider mb-1">Shipping Address *</label>
+                          <textarea 
+                            rows="2" 
+                            required
+                            value={shippingAddress}
+                            onChange={(e) => setShippingAddress(e.target.value)}
+                            className="w-full px-3 py-2 border border-purple-200 rounded focus:outline-none focus:border-purple-500 text-sm resize-none"
+                          ></textarea>
                         </div>
 
-                        {/* Summary & Remarks */}
-                        <div className="space-y-6 flex flex-col">
-                            <div className="bg-[#F9F9F9] border border-gray-200 rounded-lg p-5 space-y-3">
-                                <div className="flex justify-between items-center border-b border-gray-200 pb-2">
-                                    <span className="text-sm text-gray-500">Delivery</span>
-                                    <span className="text-sm font-medium text-[#212529]">{selectedQuotation.deliveryTime} days</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm text-gray-500">Vendor Rating</span>
-                                    <div className="flex items-center space-x-1">
-                                        <span className="text-sm font-medium text-[#212529]">{selectedQuotation.rating} / 5</span>
-                                        <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path>
-                                        </svg>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex-1">
-                                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Manager Remarks</h3>
-                                <textarea 
-                                    rows="4" 
-                                    placeholder="Add required conditions or reasons for rejection..." 
-                                    value={remarks}
-                                    onChange={(e) => setRemarks(e.target.value)}
-                                    className="w-full px-4 py-3 border border-gray-300 rounded focus:outline-none focus:border-[#714B67] focus:ring-1 focus:ring-[#714B67] text-sm bg-white placeholder-gray-400 transition-colors resize-none"
-                                ></textarea>
-                            </div>
+                        <div>
+                          <label className="block text-xs font-bold text-purple-800 uppercase tracking-wider mb-1">PO Terms & Conditions (Remarks)</label>
+                          <textarea 
+                            rows="2" 
+                            placeholder="Add specific terms for this PO..."
+                            value={remarks}
+                            onChange={(e) => setRemarks(e.target.value)}
+                            className="w-full px-3 py-2 border border-purple-200 rounded focus:outline-none focus:border-purple-500 text-sm resize-none"
+                          ></textarea>
                         </div>
-
+                      </div>
                     </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex space-x-4 pt-6 border-t border-gray-100 mt-auto">
-                        <button 
-                            onClick={() => handleAction('APPROVE')}
-                            disabled={actionLoading}
-                            className={`flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded font-semibold transition-colors shadow-sm flex justify-center items-center space-x-2 ${actionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-                            <span>{actionLoading ? 'Processing...' : 'Approve & Create PO'}</span>
-                        </button>
-                        <button 
-                            onClick={() => handleAction('REJECT')}
-                            disabled={actionLoading}
-                            className={`flex-1 border border-red-300 bg-red-50 hover:bg-red-100 text-red-600 py-3 rounded font-semibold transition-colors shadow-sm flex justify-center items-center space-x-2 ${actionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                            <span>{actionLoading ? 'Processing...' : 'Reject'}</span>
-                        </button>
-                    </div>
-
+                  )}
                 </div>
-            )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-4 pt-6 border-t border-gray-200 mt-auto">
+                <button 
+                  onClick={() => handleAction('APPROVE')}
+                  disabled={actionLoading}
+                  className={`flex-1 bg-[#017E84] hover:bg-[#01686d] text-white py-3.5 rounded font-semibold transition-colors shadow-sm flex justify-center items-center space-x-2 ${actionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {selectedItem.queueType === 'QUOTATION' ? (
+                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                  ) : (
+                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                  )}
+                  <span>
+                    {actionLoading ? 'Processing...' : (selectedItem.queueType === 'RFQ' ? 'Approve & Publish RFQ' : 'Generate & Dispatch PO')}
+                  </span>
+                </button>
+                
+                <button 
+                  onClick={() => handleAction('REJECT')}
+                  disabled={actionLoading}
+                  className={`px-8 border border-red-300 bg-red-50 hover:bg-red-100 text-red-600 py-3.5 rounded font-semibold transition-colors shadow-sm flex justify-center items-center space-x-2 ${actionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                  <span>{actionLoading ? 'Processing...' : 'Reject'}</span>
+                </button>
+              </div>
+
+            </div>
+          )}
         </div>
 
       </div>

@@ -9,34 +9,40 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.Vendor_Bridge.backend.models.QuotationStatus.PENDING_APPROVAL;
-import static com.Vendor_Bridge.backend.models.QuotationStatus.REJECTED;
+import static com.Vendor_Bridge.backend.models.QuotationStatus.*;
 
 @Service
 public class QuotationService {
 
     private final QuotationRepository quotationRepository;
     private final RfqRepository rfqRepository;
+    private final RfqService rfqService;
     private final RfqLineItemRepository rfqLineItemRepository;
     private final UserRepository userRepository;
-
+    private final VendorRepository vendorRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
     // Constructor injection omitted for brevity...
 
     @Autowired
-    public QuotationService(QuotationRepository quotationRepository, RfqRepository rfqRepository, RfqLineItemRepository rfqLineItemRepository, UserRepository userRepository) {
+    public QuotationService(QuotationRepository quotationRepository, RfqService rfqService,RfqRepository rfqRepository, RfqLineItemRepository rfqLineItemRepository, UserRepository userRepository,VendorRepository vendorRepository,PurchaseOrderRepository purchaseOrderRepository) {
         this.quotationRepository = quotationRepository;
         this.rfqRepository = rfqRepository;
         this.rfqLineItemRepository = rfqLineItemRepository;
         this.userRepository = userRepository;
+        this.vendorRepository = vendorRepository;
+        this.rfqService = rfqService;
+        this.purchaseOrderRepository = purchaseOrderRepository;
+
     }
 
     public Quotation submitQuotation(QuotationRequest request) {
         // 1. Identify the logged-in Vendor
         String currentEmail = ((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUsername();
-        User vendor = userRepository.findByEmail(currentEmail).orElseThrow();
+        Vendor vendor =  vendorRepository.findByEmail(currentEmail).orElseThrow();
 
         // 2. Fetch the RFQ
         Rfq rfq = rfqRepository.findById(request.getRfqId())
@@ -85,26 +91,103 @@ public class QuotationService {
     }
 
     @Transactional
-    public void ChangeStatus(Long rfqId,Long quoteId,QuotationStatus status,boolean isChangeAll){
-         List<Quotation> quotations = getQuotationsForRfq(rfqId);
+    public void approvedByOfficer(Long rfqId,Long quoteId) throws  Exception{
+        Rfq rfq = rfqRepository.findById(rfqId).orElseThrow();
+        List<Quotation> quotations = quotationRepository.findByRfqId(rfqId);
         for(Quotation quotation : quotations){
             if(quotation.getId()==quoteId){
-                quotation.setStatus(status);
-            }else if(isChangeAll){
-                quotation.setStatus(REJECTED);
+                quotation.setStatus(APPROVED_BY_OFFICER);
+            }else{
+                quotation.setStatus(IN_QUEUE);
             }
-//            quotationRepository.save(quotation);
+        }
+        rfq.setStatus(RfqStatus.IN_REVIEW);
+    }
 
+    public List<Quotation> fetchByOfficer(){
+        List<Quotation> quotations = quotationRepository.findByStatus(APPROVED_BY_OFFICER);
+        return quotations;
+    }
+
+    @Transactional
+    public String awardQuotation(QuotationFinalRequest request,Long quoteid)throws Exception{
+         String action = request.getAction();
+
+        if (action.equalsIgnoreCase("APPROVE")) {
+            // 1. Fetch Quotation
+            Quotation quote = quotationRepository.findById(quoteid)
+                    .orElseThrow(() -> new RuntimeException("Quotation not found"));
+                    // 2. Update Statuses
+            quote.setStatus(QuotationStatus.APPROVED);
+            // 3. Generate the Purchase Order
+            PurchaseOrder po = new PurchaseOrder();
+            po.setPoNumber("PO-" + LocalDateTime.now().getYear() + "-" + String.format("%04d", quote.getId()));
+            po.setVendor(quote.getVendor());
+            po.setQuotation(quote);
+            po.setTotalAmount(quote.getTotalAmount());
+            po.setStatus(PurchaseOrderStatus.ISSUED);
+            po.setIssueDate(LocalDateTime.now());
+
+            // 4. Inject Dynamic Data from your QuotationFinalRequest DTO (assuming it is named 'request')
+            po.setShippingAddress(request.getShippingAddress());
+            po.setExpectedDeliveryDate(request.getExpectedDeliveryDate());
+
+            // 5. Save to Database
+            purchaseOrderRepository.save(po); // Ensure PurchaseOrderRepository is injected!
+
+            // Optional: emailService.sendPurchaseOrder(quote.getVendor().getEmail(), po);
+
+            return "Quotation awarded successfully and PO generated";
+
+        } else if (action.equalsIgnoreCase("REJECT")) {
+            // 1. Fetch Quotation
+            Quotation quote = quotationRepository.findById(quoteid)
+                    .orElseThrow(() -> new RuntimeException("Quotation not found"));
+
+            // 2. Update Statuses
+            quote.setStatus(QuotationStatus.REJECTED);
+
+            // 3. Re-open the RFQ so the Officer can select the 2nd best quote
+            quote.getRfq().setStatus(RfqStatus.PUBLISHED);
+
+            return "Quotation rejected successfully and RFQ reverted to PUBLISHED";
+
+        } else {
+            throw new IllegalArgumentException("Invalid action provided. Must be APPROVE or REJECT.");
         }
     }
 
-    public List<Quotation> getApprovedQuotations() throws  Exception{
-        try{
-              List<Quotation> quotations = quotationRepository.findByStatus(PENDING_APPROVAL);
-              return quotations;
-        }catch (Exception e){
-            throw  new Exception(e.getMessage());
+    @Transactional
+    public String PoActions(Long id,String action)throws Exception{
+        if(action.equals("accept")){
+           PurchaseOrder po = purchaseOrderRepository.findById(id).orElseThrow();
+           po.setStatus(PurchaseOrderStatus.ACCEPTED);
+            po.getQuotation().setStatus(AWARDED);
+            po.getQuotation().getRfq().setStatus(RfqStatus.AWARDED);
+           return "PO accepted by vendor successfully";
+        }else if(action.equals("reject")){
+            PurchaseOrder po = purchaseOrderRepository.findById(id).orElseThrow();
+            po.setStatus(PurchaseOrderStatus.CANCELLED);
+            po.getQuotation().setStatus(REJECTED);
+            po.getQuotation().getRfq().setStatus(RfqStatus.PUBLISHED);
+            return "PO rejected by vendor successfully";
+        }else{
+            throw new IllegalArgumentException();
         }
     }
+
+
+    public List<PurchaseOrder> getMyPos(User user)throws Exception{
+        List<PurchaseOrder> pos = purchaseOrderRepository.findByVendorId(user.getId());
+        return pos;
+    }
+
+    public List<PurchaseOrder> getALLPos(){
+        List<PurchaseOrder> pos = purchaseOrderRepository.findAll();
+        return pos;
+    }
+
+
+
 
 }
